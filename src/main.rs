@@ -34,6 +34,8 @@ const MAX_ROOM_ITEMS: i32 = 2;
 const INVENTORY_SIZE: i32 = 26;
 
 const HEAL_AMOUNT: i32 = 10;
+const LIGHTNING_DAMAGE: i32 = 30;
+const LIGHTNING_RANGE: i32 = 10;
 
 const COLOR_LIGHT_WALL: Color = Color {
     r: 130,
@@ -226,6 +228,7 @@ impl Messages {
 #[derive(Debug, Clone, PartialEq)]
 enum Item {
     Heal,
+    Lightning,
 }
 
 // Pick up an item to the inventory
@@ -489,6 +492,7 @@ fn use_item(inventory_id: usize, tcod: &mut Tcod, game: &mut Game, objects: &mut
     if let Some(item) = &game.inventory[inventory_id].item {
         let on_use = match item {
             Heal => cast_heal,
+            Lightning => cast_lightning,
         };
         match on_use(inventory_id, tcod, game, objects) {
             UseResult::UsedUp => {
@@ -524,6 +528,49 @@ fn cast_heal(
         }
     }
     UseResult::Cancelled
+}
+
+fn cast_lightning(
+    _inventory_id: usize,
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    let monster_id = closest_monster(tcod, objects, LIGHTNING_RANGE);
+    if let Some(monster_id) = monster_id {
+        game.messages.add(
+            format!(
+                "A lightning bolt strikes {} for {} damage",
+                objects[monster_id].name, LIGHTNING_DAMAGE
+            ),
+            LIGHT_BLUE,
+        );
+        objects[monster_id].take_damage(LIGHTNING_DAMAGE, game);
+        UseResult::UsedUp
+    } else {
+        game.messages.add("There is no one to strike", WHITE);
+        UseResult::Cancelled
+    }
+}
+
+fn closest_monster(tcod: &Tcod, objects: &[Object], range: i32) -> Option<usize> {
+    let mut closest_enemy = None;
+    let mut closest_dist = (range + 1) as f32;
+
+    for (id, object) in objects.iter().enumerate() {
+        if (id != PLAYER)
+            && object.fighter.is_some()
+            && object.ai.is_some()
+            && tcod.fov.is_in_fov(object.x, object.y)
+        {
+            let dist = objects[PLAYER].distance_to(&objects[id]);
+            if dist < closest_dist {
+                closest_enemy = Some(id);
+                closest_dist = dist;
+            }
+        }
+    }
+    closest_enemy
 }
 
 fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
@@ -580,10 +627,20 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
 
         // Place if there is some space
         if !is_blocked(x, y, map, objects) {
-            // Place healing potion
-            let mut potion = Object::new(x, y, '!', "healing potion", VIOLET, false);
-            potion.item = Some(Item::Heal);
-            objects.push(potion);
+            let dice = rand::random::<f32>();
+            let item = if dice < 0.7 {
+                // Place healing potion
+                let mut potion = Object::new(x, y, '!', "healing potion", VIOLET, false);
+                potion.item = Some(Item::Heal);
+                potion
+            } else {
+                // Place lighting scroll
+                let mut scroll =
+                    Object::new(x, y, '#', "scroll of lighting bolt", LIGHT_YELLOW, false);
+                scroll.item = Some(Item::Lightning);
+                scroll
+            };
+            objects.push(item);
         }
     }
 }
