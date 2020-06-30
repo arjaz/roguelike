@@ -68,6 +68,7 @@ struct Object {
     alive: bool,
     fighter: Option<Fighter>,
     ai: Option<Ai>,
+    item: Option<Item>,
 }
 
 impl Object {
@@ -82,6 +83,7 @@ impl Object {
             alive: false,
             fighter: None,
             ai: None,
+            item: None,
         }
     }
 
@@ -214,13 +216,13 @@ enum Item {
 }
 
 // Pick up an item to the inventory
-fn pick_item(object_id: usize, game: &mut Game, object: &mut Vec<Object>) {
+fn pick_item(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
     if game.inventory.len() >= INVENTORY_SIZE as usize {
         game.messages.add("Your inventory is full", DARK_RED);
     } else {
-        let item = object.swap_remove(object_id);
+        let item = objects.swap_remove(object_id);
         game.messages
-            .add(format!("You picked up the item: {}", item.name), LIGHT_GREY);
+            .add(format!("You picked up an item: {}", item.name), LIGHT_GREY);
         game.inventory.push(item);
     }
 }
@@ -401,7 +403,7 @@ fn names_under_mouse(mouse: Mouse, object: &[Object], fov_map: &FovMap) -> Strin
     names.join(", ")
 }
 
-fn handle_keys(tcod: &mut Tcod, mut game: &mut Game, objects: &mut [Object]) -> PlayerAction {
+fn handle_keys(tcod: &mut Tcod, mut game: &mut Game, objects: &mut Vec<Object>) -> PlayerAction {
     use tcod::input::KeyCode::*;
 
     let player_alive = objects[PLAYER].alive;
@@ -435,6 +437,16 @@ fn handle_keys(tcod: &mut Tcod, mut game: &mut Game, objects: &mut [Object]) -> 
         }
         (Key { code: Right, .. }, _, true) => {
             player_move_attack(1, 0, &mut game, objects);
+            PlayerAction::TookTurn
+        }
+        (Key { code: Text, .. }, "g", true) => {
+            // Look for an item under tha player
+            let item = objects
+                .iter()
+                .position(|o| o.pos() == objects[PLAYER].pos() && o.item.is_some());
+            if let Some(id) = item {
+                pick_item(id, game, objects);
+            }
             PlayerAction::TookTurn
         }
 
@@ -497,7 +509,8 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
         // Place if there is some space
         if !is_blocked(x, y, map, objects) {
             // Place healing potion
-            let potion = Object::new(x, y, '!', "healing potion", VIOLET, false);
+            let mut potion = Object::new(x, y, '!', "healing potion", VIOLET, false);
+            potion.item = Some(Item::Heal);
             objects.push(potion);
         }
     }
