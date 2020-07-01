@@ -35,7 +35,8 @@ const INVENTORY_SIZE: i32 = 26;
 
 const HEAL_AMOUNT: i32 = 10;
 const LIGHTNING_DAMAGE: i32 = 30;
-const LIGHTNING_RANGE: i32 = 10;
+const SPELL_RANGE: i32 = 10;
+const CONFUSION_DURATION: i32 = 5;
 
 const COLOR_LIGHT_WALL: Color = Color {
     r: 130,
@@ -229,6 +230,7 @@ impl Messages {
 enum Item {
     Heal,
     Lightning,
+    Confusion,
 }
 
 // Pick up an item to the inventory
@@ -247,6 +249,10 @@ fn pick_item(object_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
 #[derive(Debug, Clone, PartialEq)]
 enum Ai {
     Basic,
+    Confused {
+        previous_ai: Box<Ai>,
+        num_turns: i32,
+    },
 }
 
 fn mut_two<T>(first: usize, second: usize, items: &mut [T]) -> (&mut T, &mut T) {
@@ -261,6 +267,19 @@ fn mut_two<T>(first: usize, second: usize, items: &mut [T]) -> (&mut T, &mut T) 
 }
 
 fn ai_take_turn(monster_id: usize, tcod: &Tcod, game: &mut Game, objects: &mut [Object]) {
+    if let Some(ai) = objects[monster_id].ai.take() {
+        let new_ai = match ai {
+            Ai::Basic => ai_basic(monster_id, tcod, game, objects),
+            Ai::Confused {
+                previous_ai,
+                num_turns,
+            } => ai_confused(monster_id, tcod, game, objects, previous_ai, num_turns),
+        };
+        objects[monster_id].ai = Some(new_ai);
+    }
+}
+
+fn ai_basic(monster_id: usize, tcod: &Tcod, game: &mut Game, objects: &mut [Object]) -> Ai {
     let (monster_x, monster_y) = objects[monster_id].pos();
 
     if tcod.fov.is_in_fov(monster_x, monster_y) {
@@ -273,6 +292,38 @@ fn ai_take_turn(monster_id: usize, tcod: &Tcod, game: &mut Game, objects: &mut [
             let (monster, player) = mut_two(monster_id, PLAYER, objects);
             monster.attack(player, game);
         }
+    }
+    Ai::Basic
+}
+
+fn ai_confused(
+    monster_id: usize,
+    _tcod: &Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+    previous_ai: Box<Ai>,
+    num_turns: i32,
+) -> Ai {
+    if num_turns >= 0 {
+        // Move around confused
+        move_by(
+            monster_id,
+            rand::thread_rng().gen_range(-1, 2),
+            rand::thread_rng().gen_range(-1, 2),
+            &game.map,
+            objects,
+        );
+
+        Ai::Confused {
+            previous_ai: previous_ai,
+            num_turns: num_turns - 1,
+        }
+    } else {
+        game.messages.add(
+            format!("{} is no longer confused", objects[monster_id].name),
+            WHITE,
+        );
+        *previous_ai
     }
 }
 
@@ -493,6 +544,7 @@ fn use_item(inventory_id: usize, tcod: &mut Tcod, game: &mut Game, objects: &mut
         let on_use = match item {
             Heal => cast_heal,
             Lightning => cast_lightning,
+            Confusion => cast_confusion,
         };
         match on_use(inventory_id, tcod, game, objects) {
             UseResult::UsedUp => {
@@ -536,7 +588,7 @@ fn cast_lightning(
     game: &mut Game,
     objects: &mut [Object],
 ) -> UseResult {
-    let monster_id = closest_monster(tcod, objects, LIGHTNING_RANGE);
+    let monster_id = closest_monster(tcod, objects, SPELL_RANGE);
     if let Some(monster_id) = monster_id {
         game.messages.add(
             format!(
@@ -549,6 +601,33 @@ fn cast_lightning(
         UseResult::UsedUp
     } else {
         game.messages.add("There is no one to strike", WHITE);
+        UseResult::Cancelled
+    }
+}
+
+fn cast_confusion(
+    _inventory_id: usize,
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    let monster_id = closest_monster(tcod, objects, SPELL_RANGE);
+    if let Some(monster_id) = monster_id {
+        game.messages.add(
+            format!("{} gets confused", objects[monster_id].name),
+            LIGHT_BLUE,
+        );
+        // Fill fail if no ai found
+        let old_ai = objects[monster_id].ai.take().unwrap();
+        // let old_ai = objects[monster_id].ai.take().unwrap_or(Ai::Basic);
+
+        objects[monster_id].ai = Some(Ai::Confused {
+            previous_ai: Box::new(old_ai),
+            num_turns: CONFUSION_DURATION,
+        });
+        UseResult::UsedUp
+    } else {
+        game.messages.add("There is no one to confused", WHITE);
         UseResult::Cancelled
     }
 }
@@ -633,11 +712,16 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 let mut potion = Object::new(x, y, '!', "healing potion", VIOLET, false);
                 potion.item = Some(Item::Heal);
                 potion
-            } else {
+            } else if dice < 0.7 + 0.1 {
                 // Place lighting scroll
                 let mut scroll =
                     Object::new(x, y, '#', "scroll of lighting bolt", LIGHT_YELLOW, false);
                 scroll.item = Some(Item::Lightning);
+                scroll
+            } else {
+                // Place confusion scroll
+                let mut scroll = Object::new(x, y, '#', "scroll of confusion", LIGHT_YELLOW, false);
+                scroll.item = Some(Item::Confusion);
                 scroll
             };
             objects.push(item);
