@@ -35,6 +35,7 @@ const INVENTORY_SIZE: i32 = 26;
 
 const HEAL_AMOUNT: i32 = 10;
 const LIGHTNING_DAMAGE: i32 = 30;
+const FIRE_DAMAGE: i32 = 15;
 const SPELL_RANGE: i32 = 10;
 const CONFUSION_DURATION: i32 = 5;
 
@@ -156,6 +157,10 @@ impl Object {
             }
         }
     }
+
+    pub fn distance(&self, x: i32, y: i32) -> f32 {
+        (((x - self.x).pow(2) + (y - self.y).pow(2)) as f32).sqrt()
+    }
 }
 
 // combat-related properties and functions
@@ -230,6 +235,7 @@ impl Messages {
 enum Item {
     Heal,
     Lightning,
+    Fireball,
     Confusion,
 }
 
@@ -507,7 +513,7 @@ fn handle_keys(tcod: &mut Tcod, mut game: &mut Game, objects: &mut Vec<Object>) 
             PlayerAction::TookTurn
         }
         (Key { code: Text, .. }, "g", true) => {
-            // Look for an item under tha player
+            // Look for an item under the player
             let item = objects
                 .iter()
                 .position(|o| o.pos() == objects[PLAYER].pos() && o.item.is_some());
@@ -524,6 +530,17 @@ fn handle_keys(tcod: &mut Tcod, mut game: &mut Game, objects: &mut Vec<Object>) 
             );
             if let Some(inventory_index) = chosen_item_id {
                 use_item(inventory_index, tcod, game, objects);
+            }
+            PlayerAction::TookTurn
+        }
+        (Key { code: Text, .. }, "d", true) => {
+            let chosen_item_id = inventory_menu(
+                &game.inventory as &[Object],
+                "Press the key to drop the item\n",
+                &mut tcod.root,
+            );
+            if let Some(inventory_index) = chosen_item_id {
+                drop_item(inventory_index, game, objects);
             }
             PlayerAction::TookTurn
         }
@@ -545,6 +562,7 @@ fn use_item(inventory_id: usize, tcod: &mut Tcod, game: &mut Game, objects: &mut
             Heal => cast_heal,
             Lightning => cast_lightning,
             Confusion => cast_confusion,
+            Fireball => cast_fireball,
         };
         match on_use(inventory_id, tcod, game, objects) {
             UseResult::UsedUp => {
@@ -611,7 +629,10 @@ fn cast_confusion(
     game: &mut Game,
     objects: &mut [Object],
 ) -> UseResult {
-    let monster_id = closest_monster(tcod, objects, SPELL_RANGE);
+    // let monster_id = closest_monster(tcod, objects, SPELL_RANGE);
+    game.messages.add("Choose an enemy to confuse", LIGHT_GREY);
+    let monster_id = target_monster(tcod, game, objects, Some(SPELL_RANGE as f32));
+
     if let Some(monster_id) = monster_id {
         game.messages.add(
             format!("{} gets confused", objects[monster_id].name),
@@ -630,6 +651,102 @@ fn cast_confusion(
         game.messages.add("There is no one to confused", WHITE);
         UseResult::Cancelled
     }
+}
+
+fn cast_fireball(
+    _inventory_id: usize,
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut [Object],
+) -> UseResult {
+    // Ask to choose a tile
+    game.messages
+        .add("Choose a tile to cast infernal flames to", LIGHT_GREY);
+    let (x, y) = match target_tile(tcod, game, objects, None) {
+        Some(tile_pos) => tile_pos,
+        None => return UseResult::Cancelled,
+    };
+
+    game.messages.add(
+        "The fireball explodes and burnes everything it can touch",
+        ORANGE,
+    );
+
+    for obj in objects {
+        if obj.distance(x, y) <= (SPELL_RANGE / 2) as f32 && obj.fighter.is_some() {
+            game.messages.add(
+                format!("{} is burnt by the infernal spell!", obj.name),
+                ORANGE,
+            );
+            obj.take_damage(FIRE_DAMAGE, game);
+        }
+    }
+
+    UseResult::UsedUp
+}
+
+// Return the position of the clicked tile, or (None, None) if right clicked
+fn target_tile(
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &[Object],
+    max_range: Option<f32>,
+) -> Option<(i32, i32)> {
+    use tcod::input::KeyCode::Escape;
+    tcod.mouse = Default::default();
+    loop {
+        // render the screen -> erase inventory and show the names under the cursor
+        tcod.root.flush();
+
+        let event = input::check_for_event(input::KEY_PRESS | input::MOUSE).map(|e| e.1);
+        match event {
+            Some(Event::Mouse(m)) => tcod.mouse = m,
+            Some(Event::Key(k)) => tcod.key = k,
+            None => tcod.key = Default::default(),
+        }
+        render_all(tcod, game, objects, false);
+
+        let (x, y) = (tcod.mouse.cx as i32, tcod.mouse.cy as i32);
+
+        // Chech if visible and in range
+        let in_fov = (x < MAP_WIDTH) && (y < MAP_HEIGHT) && tcod.fov.is_in_fov(x, y);
+        let in_range = max_range.map_or(true, |range| objects[PLAYER].distance(x, y) <= range);
+        if tcod.mouse.lbutton_pressed && in_fov && in_range {
+            return Some((x, y));
+        }
+        if tcod.mouse.rbutton_pressed || tcod.key.code == Escape {
+            return None;
+        }
+    }
+}
+
+// Return the id of the clicked monster or None if no selected
+fn target_monster(
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &[Object],
+    max_range: Option<f32>,
+) -> Option<usize> {
+    loop {
+        match target_tile(tcod, game, objects, max_range) {
+            Some((x, y)) => {
+                for (id, obj) in objects.iter().enumerate() {
+                    if obj.pos() == (x, y) && obj.fighter.is_some() && id != PLAYER {
+                        return Some(id);
+                    }
+                }
+            }
+            None => return None,
+        }
+    }
+}
+
+fn drop_item(inventory_id: usize, game: &mut Game, objects: &mut Vec<Object>) {
+    let mut item = game.inventory.remove(inventory_id);
+    item.set_pos(objects[PLAYER].x, objects[PLAYER].y);
+    game.messages
+        .add(format!("Yout dropped {}", item.name), LIGHT_GREY);
+    objects.push(item);
 }
 
 fn closest_monster(tcod: &Tcod, objects: &[Object], range: i32) -> Option<usize> {
@@ -712,6 +829,11 @@ fn place_objects(room: Rect, map: &Map, objects: &mut Vec<Object>) {
                 let mut potion = Object::new(x, y, '!', "healing potion", VIOLET, false);
                 potion.item = Some(Item::Heal);
                 potion
+            } else if dice < 0.7 + 0.1 + 0.1 {
+                // Place fireball scroll
+                let mut scroll = Object::new(x, y, '#', "fireball scroll", ORANGE, false);
+                scroll.item = Some(Item::Fireball);
+                scroll
             } else if dice < 0.7 + 0.1 {
                 // Place lighting scroll
                 let mut scroll =
