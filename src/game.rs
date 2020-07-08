@@ -190,45 +190,61 @@ pub fn new_game(tcod: &mut Tcod) -> (Game, Vec<Object>) {
     (game, objects)
 }
 
+fn tick(
+    tcod: &mut Tcod,
+    game: &mut Game,
+    objects: &mut Vec<Object>,
+    previous_player_position: &mut (i32, i32),
+) -> PlayerAction {
+    // Clear previous frame
+    tcod.con.clear();
+
+    // Get input
+    match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
+        Some((_, Event::Mouse(m))) => tcod.mouse = m,
+        Some((_, Event::Key(k))) => tcod.key = k,
+        _ => {
+            tcod.mouse = Default::default();
+            tcod.key = Default::default();
+        }
+    }
+
+    // Render the screen
+    let fov_recompute = objects[PLAYER].pos() != *previous_player_position;
+    render_all(tcod, game, &objects, fov_recompute);
+
+    tcod.root.flush();
+
+    // Check leveling up
+    level_up(tcod, game, objects);
+
+    // Handle input keyss
+    *previous_player_position = objects[PLAYER].pos();
+    let player_action = handle_keys(tcod, game, objects);
+    if player_action == PlayerAction::Exit {
+        save_game(game, objects).unwrap();
+        return PlayerAction::Exit;
+    }
+
+    // Let the monsters take their turn
+    if objects[PLAYER].alive && player_action == PlayerAction::TookTurn {
+        for id in 0..objects.len() {
+            if objects[id].ai.is_some() {
+                ai_take_turn(id, tcod, game, objects);
+            }
+        }
+    }
+    player_action
+}
+
 pub fn play_game(tcod: &mut Tcod, game: &mut Game, objects: &mut Vec<Object>) {
     // Recompute the fov
     let mut previous_player_position = (-1, -1);
 
     while !tcod.root.window_closed() {
-        // Clear previous frame
-        tcod.con.clear();
-
-        match input::check_for_event(input::MOUSE | input::KEY_PRESS) {
-            Some((_, Event::Mouse(m))) => tcod.mouse = m,
-            Some((_, Event::Key(k))) => tcod.key = k,
-            _ => tcod.key = Default::default(),
-        }
-
-        // render the screen
-        let fov_recompute = previous_player_position != (objects[PLAYER].pos());
-        render_all(tcod, game, &objects, fov_recompute);
-
-        tcod.root.flush();
-
-        // check leveling up
-        level_up(tcod, game, objects);
-
-        // handle keys
-        previous_player_position = objects[PLAYER].pos();
-        let player_action = handle_keys(tcod, game, objects);
-        if player_action == PlayerAction::Exit {
-            save_game(game, objects).unwrap();
+        if tick(tcod, game, objects, &mut previous_player_position) == PlayerAction::Exit {
             break;
-        }
-
-        // Let monsters tke turn
-        if objects[PLAYER].alive && player_action == PlayerAction::TookTurn {
-            for id in 0..objects.len() {
-                if objects[id].ai.is_some() {
-                    ai_take_turn(id, tcod, game, objects);
-                }
-            }
-        }
+        };
     }
 }
 
