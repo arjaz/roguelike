@@ -16,7 +16,6 @@ impl Position {
     }
 
     pub fn try_move(&mut self, map: &Map, dx: i32, dy: i32) {
-        println!("Try to move");
         let (x, y) = (self.x + dx, self.y + dy);
         if !map[x as usize][y as usize].blocked {
             self.set_pos(x, y);

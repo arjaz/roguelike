@@ -2,10 +2,12 @@ use tcod::colors::*;
 use tcod::console::*;
 use tcod::input::{self, Event, Key};
 
+use std::cmp;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::components::combat::Combat;
 use crate::map::{Map, MAP_HEIGHT, MAP_WIDTH};
-use crate::scene::{new_scene, Scene};
+use crate::scene::Scene;
 
 pub const FPS_LIMIT: i32 = 60;
 pub const SCREEN_WIDTH: i32 = 80;
@@ -54,7 +56,7 @@ pub fn main_menu(tcod: &mut Tcod) {
         match choice {
             Some(0) => {
                 println!("Start the game");
-                let mut scene = new_scene(tcod);
+                let mut scene = Scene::new(tcod);
                 game_loop(tcod, &mut scene);
             }
             Some(1) => {
@@ -154,7 +156,7 @@ pub fn game_loop(tcod: &mut Tcod, scene: &mut Scene) {
     }
 }
 
-fn handle_keys(tcod: &Tcod, scene: &mut Scene) -> Option<PlayerAction> {
+fn handle_keys(tcod: &Tcod, mut scene: &mut Scene) -> Option<PlayerAction> {
     use tcod::input::KeyCode::*;
 
     let player_alive = scene
@@ -169,35 +171,74 @@ fn handle_keys(tcod: &Tcod, scene: &mut Scene) -> Option<PlayerAction> {
     //     .iter_mut()
     //     .find(|c| c.entity == scene.player_id)
     //     .expect("No player found. How did you even get here");
-    let player_position = {
-        let id = scene.player_id;
-        &mut scene
-            .position_components
-            .iter_mut()
-            .find(|c| c.entity == id)
-            .expect("No player found. How did you even get here")
-    };
 
     return match (tcod.key, tcod.key.text(), player_alive) {
         (Key { code: Escape, .. }, _, _) => Some(PlayerAction::Exit),
         (Key { code: Text, .. }, "h", true) | (Key { code: NumPad4, .. }, _, true) => {
-            player_position.try_move(&scene.map, -1, 0);
+            move_attack(scene.player_id, &mut scene, -1, 0);
             Some(PlayerAction::Turn)
         }
         (Key { code: Text, .. }, "j", true) | (Key { code: NumPad2, .. }, _, true) => {
-            player_position.try_move(&scene.map, 0, 1);
+            move_attack(scene.player_id, &mut scene, 0, 1);
             Some(PlayerAction::Turn)
         }
         (Key { code: Text, .. }, "k", true) | (Key { code: NumPad8, .. }, _, true) => {
-            player_position.try_move(&scene.map, 0, -1);
+            move_attack(scene.player_id, &mut scene, 0, -1);
             Some(PlayerAction::Turn)
         }
         (Key { code: Text, .. }, "l", true) | (Key { code: NumPad6, .. }, _, true) => {
-            player_position.try_move(&scene.map, 1, 0);
+            move_attack(scene.player_id, &mut scene, 1, 0);
             Some(PlayerAction::Turn)
         }
         _ => None,
     };
+}
+
+fn move_attack(entity: usize, scene: &mut Scene, dx: i32, dy: i32) {
+    let new_entity_coordinates = {
+        let (x, y) = scene
+            .position_components
+            .iter()
+            .find(|c| c.entity == entity)
+            .unwrap()
+            .pos();
+        (x + dx, y + dy)
+    };
+    // I guess you won't be able to move on another position object with that code
+    if let Some(target_id) = scene
+        .position_components
+        .iter()
+        .find(|c| c.pos() == new_entity_coordinates)
+        .map_or(None, |c| Some(c.entity))
+    {
+        if let Some(_) = scene
+            .combat_components
+            .iter()
+            .find(|c| c.entity == target_id)
+        {
+            let (attacker, defender) = mut_two(entity, target_id, &mut scene.combat_components);
+            attacker.attack(defender);
+        } else {
+        }
+    } else {
+        let entity_position = scene
+            .position_components
+            .iter_mut()
+            .find(|c| c.entity == entity)
+            .unwrap();
+        entity_position.try_move(&scene.map, dx, dy);
+    }
+}
+
+fn mut_two<T>(first: usize, second: usize, items: &mut [T]) -> (&mut T, &mut T) {
+    assert!(first != second);
+    let split_at_index = cmp::max(first, second);
+    let (first_slice, second_slice) = items.split_at_mut(split_at_index);
+    if first < second {
+        (&mut first_slice[first], &mut second_slice[0])
+    } else {
+        (&mut second_slice[0], &mut first_slice[second])
+    }
 }
 
 fn render_map(tcod: &mut Tcod, map: &Map) {
