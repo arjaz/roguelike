@@ -1,9 +1,7 @@
-use serde::{Deserialize, Serialize};
-
 use crate::map::Map;
 
 // Position related properties adn functions
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
 pub struct Position {
     pub entity: usize,
     pub x: i32,

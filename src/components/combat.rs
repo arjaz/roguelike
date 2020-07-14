@@ -1,7 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 // Combat-related properties and functions
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq)]
 pub struct Combat {
     pub entity: usize,
     pub alive: bool,
@@ -77,7 +75,7 @@ impl Combat {
 }
 
 // Callback called on death of the Entity with Combat component
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum DeathCallback {
     Player,
     Monster,

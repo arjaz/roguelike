@@ -1,12 +1,10 @@
-use serde::{Deserialize, Serialize};
-
 use tcod::colors::*;
 use tcod::console::*;
 
 use crate::components::position::Position;
 
 // A component responsible for displaying an entity
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Render {
     pub entity: usize,
     pub char: char,
