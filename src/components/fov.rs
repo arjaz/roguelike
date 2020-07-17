@@ -17,8 +17,8 @@ impl crate::components::Component for Fov {
 impl Fov {
     pub fn new(entity: usize, view_radius: i32, map: &Map) -> Self {
         let mut fov_map = FovMap::new(map.len() as i32, map[0].len() as i32);
-        for x in 0..map.len() {
-            for y in 0..map[x].len() {
+        for (x, _) in map.iter().enumerate() {
+            for (y, _) in map[x].iter().enumerate() {
                 fov_map.set(
                     x as i32,
                     y as i32,

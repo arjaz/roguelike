@@ -15,14 +15,11 @@ pub struct Scene {
     pub fov_components: Vec<Fov>,
 }
 
-pub fn find_component<'a, T: Component>(id: usize, collection: &'a [T]) -> Option<&'a T> {
+pub fn find_component<T: Component>(id: usize, collection: &[T]) -> Option<&T> {
     collection.iter().find(|c| c.get_entity() == id)
 }
 
-pub fn find_component_mut<'a, T: Component>(
-    id: usize,
-    collection: &'a mut [T],
-) -> Option<&'a mut T> {
+pub fn find_component_mut<T: Component>(id: usize, collection: &mut [T]) -> Option<&mut T> {
     collection.iter_mut().find(|c| c.get_entity() == id)
 }
 

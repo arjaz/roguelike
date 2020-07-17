@@ -34,9 +34,8 @@ pub fn get_unique_id() -> usize {
 }
 
 pub fn main_menu(tcod: &mut Tcod) {
-    let img = tcod::image::Image::from_file("menu_background.png")
-        .ok()
-        .expect("Background image not found");
+    let img =
+        tcod::image::Image::from_file("menu_background.png").expect("Background image not found");
 
     tcod.root.set_default_foreground(LIGHT_RED);
     tcod.root.print_ex(
@@ -155,8 +154,8 @@ fn tick(
         .unwrap()
         .pos();
 
-    let player_action = handle_keys(&tcod, &mut scene);
-    player_action
+    // player action
+    handle_keys(&tcod, &mut scene)
 }
 
 fn game_loop(tcod: &mut Tcod, scene: &mut Scene) {
@@ -178,7 +177,7 @@ fn handle_keys(tcod: &Tcod, mut scene: &mut Scene) -> Option<PlayerAction> {
         .unwrap()
         .alive;
 
-    return match (tcod.key, tcod.key.text(), player_alive) {
+    match (tcod.key, tcod.key.text(), player_alive) {
         (Key { code: Escape, .. }, _, _) => Some(PlayerAction::Exit),
         (Key { code: Text, .. }, "h", true) | (Key { code: NumPad4, .. }, _, true) => {
             move_attack(scene.player_id, &mut scene, -1, 0);
@@ -197,7 +196,7 @@ fn handle_keys(tcod: &Tcod, mut scene: &mut Scene) -> Option<PlayerAction> {
             Some(PlayerAction::Turn)
         }
         _ => None,
-    };
+    }
 }
 
 fn move_attack(entity: usize, scene: &mut Scene, dx: i32, dy: i32) {
@@ -212,7 +211,7 @@ fn move_attack(entity: usize, scene: &mut Scene, dx: i32, dy: i32) {
         .position_components
         .iter()
         .find(|c| c.pos() == new_entity_coordinates)
-        .map_or(None, |c| Some(c.get_entity()))
+        .map(|c| c.get_entity())
     {
         if find_component(target_id, &scene.combat_components).is_some() {
             let (attacker, defender) = mut_two(entity, target_id, &mut scene.combat_components);
