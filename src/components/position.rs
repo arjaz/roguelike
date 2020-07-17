@@ -3,9 +3,15 @@ use crate::map::Map;
 // Position related properties adn functions
 #[derive(Debug, PartialEq)]
 pub struct Position {
-    pub entity: usize,
+    entity: usize,
     pub x: i32,
     pub y: i32,
+}
+
+impl crate::components::Component for Position {
+    fn get_entity(&self) -> usize {
+        self.entity
+    }
 }
 
 impl Position {

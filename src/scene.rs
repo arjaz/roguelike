@@ -1,11 +1,29 @@
 use crate::map::make_map;
 
+use crate::components::combat::Combat;
+use crate::components::fov::Fov;
+use crate::components::position::Position;
+use crate::components::render::Render;
+use crate::components::Component;
+
 pub struct Scene {
     pub map: crate::map::Map,
     pub player_id: usize,
-    pub render_components: Vec<crate::components::render::Render>,
-    pub position_components: Vec<crate::components::position::Position>,
-    pub combat_components: Vec<crate::components::combat::Combat>,
+    pub render_components: Vec<Render>,
+    pub position_components: Vec<Position>,
+    pub combat_components: Vec<Combat>,
+    pub fov_components: Vec<Fov>,
+}
+
+pub fn find_component<'a, T: Component>(id: usize, collection: &'a [T]) -> Option<&'a T> {
+    collection.iter().find(|c| c.get_entity() == id)
+}
+
+pub fn find_component_mut<'a, T: Component>(
+    id: usize,
+    collection: &'a mut [T],
+) -> Option<&'a mut T> {
+    collection.iter_mut().find(|c| c.get_entity() == id)
 }
 
 impl Scene {
@@ -35,12 +53,19 @@ impl Scene {
         let mut position_components = vec![player_position];
         let combat_components = vec![player_combat];
 
+        let map = make_map(player_id, &mut position_components);
+
+        let player_view_radius = 15;
+        let player_fov = Fov::new(player_id, player_view_radius, &map);
+        let fov_components = vec![player_fov];
+
         Scene {
-            map: make_map(player_id, &mut position_components),
+            map,
             player_id,
             render_components,
             position_components,
             combat_components,
+            fov_components,
         }
     }
 }

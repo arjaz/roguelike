@@ -1,13 +1,15 @@
 use tcod::colors::*;
 use tcod::console::*;
 use tcod::input::{self, Event, Key};
+use tcod::map::FovAlgorithm;
 
 use std::cmp;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::components::combat::Combat;
+use crate::components::fov::Fov;
+use crate::components::Component;
 use crate::map::{Map, MAP_HEIGHT, MAP_WIDTH};
-use crate::scene::Scene;
+use crate::scene::{find_component, find_component_mut, Scene};
 
 pub const FPS_LIMIT: i32 = 60;
 pub const SCREEN_WIDTH: i32 = 80;
@@ -83,17 +85,36 @@ fn tick(
         _ => tcod.key = Default::default(),
     }
 
+    // Recompute the fov
+    for fov_component in &mut scene.fov_components {
+        if let Some(position) =
+            find_component(fov_component.get_entity(), &scene.position_components)
+        {
+            const FOV_ALGORITHM: FovAlgorithm = FovAlgorithm::Basic;
+            const FOV_LIGHT_WALLS: bool = true;
+            fov_component.fov_map.compute_fov(
+                position.x,
+                position.y,
+                fov_component.view_radius,
+                FOV_LIGHT_WALLS,
+                FOV_ALGORITHM,
+            )
+        }
+    }
+
     // Render the map
-    render_map(tcod, &scene.map);
+    render_map(
+        tcod,
+        find_component(scene.player_id, &scene.fov_components).unwrap(),
+        &scene.map,
+    );
 
     // Render every render component
-    for render_component in scene.render_components.as_mut_slice() {
+    for render_component in &scene.render_components {
         // TODO: split apart map position and render position
         // Find position
-        if let Some(position) = scene
-            .position_components
-            .iter()
-            .find(|c| c.entity == render_component.entity)
+        if let Some(position) =
+            find_component(render_component.get_entity(), &scene.position_components)
         {
             render_component.draw(&mut tcod.con, &position);
         }
@@ -130,23 +151,17 @@ fn tick(
     tcod.root.flush();
 
     // Handle user input
-    *previous_player_position = scene
-        .position_components
-        .iter()
-        .find(|c| c.entity == scene.player_id)
-        .expect("No player found. How did you even get here?")
+    *previous_player_position = find_component(scene.player_id, &scene.position_components)
+        .unwrap()
         .pos();
 
     let player_action = handle_keys(&tcod, &mut scene);
     player_action
 }
 
-pub fn game_loop(tcod: &mut Tcod, scene: &mut Scene) {
-    let mut previous_player_position = scene
-        .position_components
-        .iter()
-        .find(|c| c.entity == scene.player_id)
-        .expect("No player found. How did you even get here?")
+fn game_loop(tcod: &mut Tcod, scene: &mut Scene) {
+    let mut previous_player_position = find_component(scene.player_id, &scene.position_components)
+        .unwrap()
         .pos();
     while !tcod.root.window_closed() {
         let player_action = tick(tcod, scene, &mut previous_player_position);
@@ -159,18 +174,9 @@ pub fn game_loop(tcod: &mut Tcod, scene: &mut Scene) {
 fn handle_keys(tcod: &Tcod, mut scene: &mut Scene) -> Option<PlayerAction> {
     use tcod::input::KeyCode::*;
 
-    let player_alive = scene
-        .combat_components
-        .iter()
-        .find(|c| c.entity == scene.player_id)
-        .expect("No player found. How did you even get here")
+    let player_alive = find_component(scene.player_id, &scene.combat_components)
+        .unwrap()
         .alive;
-
-    // let player_position = &mut scene
-    //     .position_components
-    //     .iter_mut()
-    //     .find(|c| c.entity == scene.player_id)
-    //     .expect("No player found. How did you even get here");
 
     return match (tcod.key, tcod.key.text(), player_alive) {
         (Key { code: Escape, .. }, _, _) => Some(PlayerAction::Exit),
@@ -196,36 +202,28 @@ fn handle_keys(tcod: &Tcod, mut scene: &mut Scene) -> Option<PlayerAction> {
 
 fn move_attack(entity: usize, scene: &mut Scene, dx: i32, dy: i32) {
     let new_entity_coordinates = {
-        let (x, y) = scene
-            .position_components
-            .iter()
-            .find(|c| c.entity == entity)
+        let (x, y) = find_component(entity, &scene.position_components)
             .unwrap()
             .pos();
         (x + dx, y + dy)
     };
-    // I guess you won't be able to move on another position object with that code
+    // FIXME: This repeats itself
     if let Some(target_id) = scene
         .position_components
         .iter()
         .find(|c| c.pos() == new_entity_coordinates)
-        .map_or(None, |c| Some(c.entity))
+        .map_or(None, |c| Some(c.get_entity()))
     {
-        if let Some(_) = scene
-            .combat_components
-            .iter()
-            .find(|c| c.entity == target_id)
-        {
+        if find_component(target_id, &scene.combat_components).is_some() {
             let (attacker, defender) = mut_two(entity, target_id, &mut scene.combat_components);
             attacker.attack(defender);
         } else {
+            let entity_position =
+                find_component_mut(entity, &mut scene.position_components).unwrap();
+            entity_position.try_move(&scene.map, dx, dy);
         }
     } else {
-        let entity_position = scene
-            .position_components
-            .iter_mut()
-            .find(|c| c.entity == entity)
-            .unwrap();
+        let entity_position = find_component_mut(entity, &mut scene.position_components).unwrap();
         entity_position.try_move(&scene.map, dx, dy);
     }
 }
@@ -241,8 +239,8 @@ fn mut_two<T>(first: usize, second: usize, items: &mut [T]) -> (&mut T, &mut T) 
     }
 }
 
-fn render_map(tcod: &mut Tcod, map: &Map) {
-    const WALL_COLOR: Color = Color {
+fn render_map(tcod: &mut Tcod, player_fov: &Fov, map: &Map) {
+    const DARK_WALL_COLOR: Color = Color {
         r: 0x2e,
         g: 0x34,
         b: 0x40,
@@ -252,13 +250,21 @@ fn render_map(tcod: &mut Tcod, map: &Map) {
         g: 0x56,
         b: 0x6a,
     };
+    const DARK_FLOOR_COLOR: Color = Color {
+        r: 0x3b,
+        g: 0x42,
+        b: 0x52,
+    };
 
     for y in 0..MAP_HEIGHT {
         for x in 0..MAP_WIDTH {
             let wall = map[x as usize][y as usize].block_sight;
-            let color = match wall {
-                true => WALL_COLOR,
-                false => FLOOR_COLOR,
+            let visible = player_fov.fov_map.is_in_fov(x, y);
+            let color = match (visible, wall) {
+                (true, true) => DARK_WALL_COLOR,
+                (true, false) => FLOOR_COLOR,
+                (false, true) => DARK_WALL_COLOR,
+                (false, false) => DARK_FLOOR_COLOR,
             };
 
             tcod.con
@@ -269,12 +275,7 @@ fn render_map(tcod: &mut Tcod, map: &Map) {
 
 // Provides the user with a menu of options to select from
 // Returns the index of the selected option or None if no option was selected
-pub fn menu<T: AsRef<str>>(
-    header: &str,
-    options: &[T],
-    width: i32,
-    root: &mut Root,
-) -> Option<usize> {
+fn menu<T: AsRef<str>>(header: &str, options: &[T], width: i32, root: &mut Root) -> Option<usize> {
     // We use 26 letters of the alphabet to provide options
     assert!(options.len() <= 26, "There aren't enough letters");
 

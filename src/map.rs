@@ -1,6 +1,8 @@
 use rand::Rng;
 use std::cmp;
 
+use crate::components::Component;
+
 pub const MAP_WIDTH: i32 = 80;
 pub const MAP_HEIGHT: i32 = 43;
 
@@ -120,7 +122,7 @@ pub fn make_map(
                 // Moreover, that's O(n), I need to research a bit on how to implement this
                 if let Some(player_position) = position_components
                     .iter_mut()
-                    .find(|c| c.entity == player_id)
+                    .find(|c| c.get_entity() == player_id)
                 {
                     player_position.set_pos(new_x, new_y);
                 }
@@ -139,6 +141,8 @@ pub fn make_map(
             rooms.push(new_room);
         }
     }
+
+    // Create enemies
 
     map
 }

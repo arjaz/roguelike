@@ -6,9 +6,15 @@ use crate::components::position::Position;
 // A component responsible for displaying an entity
 #[derive(Debug)]
 pub struct Render {
-    pub entity: usize,
+    entity: usize,
     pub char: char,
     pub color: Color,
+}
+
+impl crate::components::Component for Render {
+    fn get_entity(&self) -> usize {
+        self.entity
+    }
 }
 
 impl Render {

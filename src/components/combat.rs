@@ -1,13 +1,19 @@
 // Combat-related properties and functions
 #[derive(Debug, PartialEq)]
 pub struct Combat {
-    pub entity: usize,
+    entity: usize,
     pub alive: bool,
     base_max_hp: i32,
     pub hp: i32,
     base_defense: i32,
     base_damage: i32,
     pub on_death: Option<DeathCallback>,
+}
+
+impl crate::components::Component for Combat {
+    fn get_entity(&self) -> usize {
+        self.entity
+    }
 }
 
 impl Combat {
