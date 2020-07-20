@@ -9,6 +9,7 @@ use crate::components::Component;
 pub struct Scene {
     pub map: crate::map::Map,
     pub player_id: usize,
+    pub entities: Vec<usize>,
     pub render_components: Vec<Render>,
     pub position_components: Vec<Position>,
     pub combat_components: Vec<Combat>,
@@ -56,9 +57,12 @@ impl Scene {
         let player_fov = Fov::new(player_id, player_view_radius, &map);
         let fov_components = vec![player_fov];
 
+        let entities = vec![player_id];
+
         Scene {
             map,
             player_id,
+            entities,
             render_components,
             position_components,
             combat_components,
